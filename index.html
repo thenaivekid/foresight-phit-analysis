@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System 3 / Foresight — p_hit latch analysis</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1115;color:#e6e6e6}
+ header{padding:22px 32px;background:#161a22;border-bottom:1px solid #2a2f3a}
+ h1{margin:0;font-size:24px} h2{border-bottom:1px solid #2a2f3a;padding-bottom:6px;margin-top:36px}
+ nav a{color:#8ab4f8;margin-right:16px;text-decoration:none;font-size:14px}
+ main{padding:8px 32px 60px;max-width:1500px}
+ .cards{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}
+ .card{background:#161a22;border:1px solid #2a2f3a;border-radius:10px;padding:14px 18px;min-width:200px}
+ .card b{font-size:26px;display:block;color:#ffd166}
+ table{border-collapse:collapse;font-size:14px;margin:10px 0}
+ td,th{border:1px solid #2a2f3a;padding:5px 10px;text-align:left} th{background:#1c212b}
+ img.fig{max-width:100%;background:#fff;border-radius:6px;margin:8px 0}
+ select,input{background:#1c212b;color:#e6e6e6;border:1px solid #3a4150;border-radius:6px;padding:5px 8px;margin-right:8px}
+ .row{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+ #pane{width:360px;background:#161a22;border:1px solid #2a2f3a;border-radius:10px;padding:12px;font-size:13px}
+ #pane img{width:100%;border-radius:6px}
+ .note{color:#9aa3b2;font-size:14px} .good{color:#06d6a0} .bad{color:#ef476f}
+ code{background:#1c212b;padding:1px 5px;border-radius:4px}
+ .how{background:#132033;border-left:4px solid #8ab4f8;padding:10px 14px;border-radius:6px;margin:10px 0;font-size:14px;line-height:1.5}
+ .how b:first-child{color:#8ab4f8}
+</style>
+</head>
+<body>
+<header>
+ <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
+ <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#fix">Suggested improvements</a></nav>
+</header>
+<main>
+<h2 id="glossary">Start here: the 60-second primer</h2>
+<div class="how"><b>The setup.</b> A video plays; every second the model is asked a yes/no question such as <i>"Has the person raised both arms?"</i>.
+<b>p_hit</b> is the model's probability of answering <i>yes</i> (0 = sure nothing, 1 = sure it is happening). When p_hit is high enough the system <b>fires</b> (speaks up).
+The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human said the system should speak. A fire within &plusmn;3 s of a GT event is a <b>hit</b>; otherwise an <b>over-fire</b>. A GT event with no fire nearby is a <b>miss</b>.<br><br>
+<b>Key terms.</b> <b>Jump</b> = p_hit right after an event minus p_hit right before it (bigger = the model noticed). <b>Random control</b> = the same measurement at random moments; a result only counts if it beats this. <b>AUC</b> = how well a signal separates event moments from other moments: 0.5 = coin flip, 1.0 = perfect. <b>t-SNE</b> = a 2-D map where similar things sit near each other.<br><br>
+<b>Data.</b> 932 OmniPro samples where audio is not required (none + helpful), 699 videos, ~180k seconds of model output, vision-only System 3 (frozen Qwen3-VL-8B).</div>
+
+<h2 id="headline">Headline</h2>
+<p><b>p_hit latches.</b> It detects the <i>first</i> occurrence of the target sharply and on time, then stays high for the rest of the video, so later occurrences are invisible. It behaves like a <i>"has it happened yet?"</i> detector, not a <i>"is a new one happening now?"</i> detector.</p>
+<div class="cards">
+ <div class="card"><b>+0.28</b>jump in p_hit at event #1<br><span class="note">(random time: +0.05)</span></div>
+ <div class="card"><b>+0.05</b>bump at event #2<br><span class="note">(random post-latch: −0.01)</span></div>
+ <div class="card"><b>0.00</b>bump at event #3</div>
+ <div class="card"><b>75%</b>of videos: p higher after event #1 than before<br><span class="note">56% by &gt; 0.2</span></div>
+ <div class="card"><b>0.755</b>median p_hit after the latch<br><span class="note">44% of ticks ≥ 0.8 — no headroom</span></div>
+ <div class="card"><b>0.51</b>best AUC for later events inside the latch<br><span class="note">5 signal transforms tried, none work</span></div>
+</div>
+
+<h2 id="raster">1. The latch, in one picture</h2>
+<p class="note">Each row = one video, aligned so <b>0 s = the first ground-truth event</b>. Colour = p_hit (dark = low, bright = high). Ticks = later events. Rows sorted by task, then by when p_hit first crosses 0.5. Interactive version (built in your browser from the raw traces) — zoom, hover:</p>
+<div><label>task <select id="rTask"></select></label><label>sort <select id="rSort"><option value="onset">by p_hit onset</option><option value="auc">by per-video AUC</option></select></label></div>
+<div class="how"><b>How to read this:</b> every horizontal line is one video. Left of the cyan line = before the first real event, right = after. If the model behaved ideally, each row would be dark except short bright flashes at the cyan line and at each small cyan tick (later events). Instead most rows are <b>dark on the left and bright for the whole right side</b>: the model switches on at the first event and never switches off. That is the "latch". Rows that turn bright <i>before</i> the line latched too early. Hover any cell for the video id; use the task filter to see one task.</div><div id="rasterPlot" style="height:760px"></div>
+<details><summary class="note">static version (all tasks)</summary><img class="fig" src="img/L1_latch_raster.png"></details>
+
+<h2 id="later">2. Is there still a signal for event #2 / #3?</h2>
+<img class="fig" src="img/L2_later_event_bump.png"><div class="how"><b>How to read this:</b> <b>Left:</b> average p_hit around each event, all videos lined up so 0 = the event. The red curve (event #1) shoots up from ~0.4 to ~0.7: the model clearly notices the first event. The blue and green curves (events #2, #3) start already high and barely move. Dashed grey = random moments after the latch. <b>Right:</b> the same curves with each video&#39;s own level just before the event subtracted, so only the extra bump remains. Event #2 rises about +0.05 above the grey band (small but real); event #3 does not rise. Shaded bands = 95% confidence.</div>
+<table>
+<tr><th></th><th>bump (after − own level before)</th><th>random post-latch time</th><th>videos with bump &gt; 0.1</th></tr>
+<tr><td>event #1</td><td class="good">+0.28</td><td>+0.05</td><td>56%</td></tr>
+<tr><td>event #2 (n=803)</td><td>+0.050 ± 0.017</td><td>−0.013 ± 0.008</td><td>27% (chance 15%)</td></tr>
+<tr><td>event #3 (n=739)</td><td class="bad">+0.000 ± 0.012</td><td>−0.013</td><td>19% (chance 15%)</td></tr>
+</table>
+<p>Event #2 has a small real bump, partly a slow ramp from event #1 (they are often close together). Event #3 has none. Within the latched region, no transform of the signal recovers later events:</p>
+<img class="fig" src="img/L3_harness_later_events.png"><div class="how"><b>How to read this:</b> Five ways of processing p_hit (raw, logit, minus rolling median, first difference, rolling z-score), tested on whether they still find later events after the latch. Each bar is an AUC; the line at 0.5 is chance. All bars hug 0.5: <b>no filter recovers later events from this signal</b>.</div>
+<table><tr><th>signal (after the latch)</th><th>AUC later event vs rest</th><th>random control</th></tr>
+<tr><td>raw p_hit</td><td>0.517</td><td>0.489</td></tr><tr><td>logit p_hit</td><td>0.517</td><td>0.489</td></tr>
+<tr><td>p − 20 s rolling median</td><td>0.502</td><td>0.495</td></tr><tr><td>first difference</td><td>0.501</td><td>0.502</td></tr>
+<tr><td>rolling z-score (30 s)</td><td>0.514</td><td>0.497</td></tr></table>
+
+<h2 id="explorer">3. Video explorer — every trace, interactive</h2>
+<p class="note">Black line = p_hit. Green bands = ground-truth event ±3 s (hover for description). Dots = fires (green = hit, red = over-fire). Hover the line to see what the model wrote in <code>seen</code> at that second.</p>
+<div><label>task <select id="eTask"></select></label><label>video <select id="eVid" style="max-width:700px"></select></label><button id="ePrev">◀</button><button id="eNext">▶</button></div>
+<div id="eQ" class="note" style="margin:8px 0"></div>
+<div class="how"><b>How to read this:</b> pick a task and a video (sorted best &rarr; worst AUC). The white line is p_hit over time. Green bands = when a real event happened (hover the triangles for what happened). Green dots = fires that hit an event; red dots = over-fires. Hover the white line to read what the model said it was seeing at that second. Good videos: the line rises inside green bands. Latched videos: it rises at the first band and stays up.</div><div id="tracePlot" style="height:420px"></div>
+<div id="eGT" class="note"></div>
+
+<h2 id="tasks">4. Where it works and where it fails (per task)</h2>
+<table>
+<tr><th>task</th><th>n</th><th>jump at event #1 (random)</th><th>re-rise at #2</th><th>videos with AUC ≥ 0.7</th><th>verdict</th></tr>
+<tr><td>sequential_step_instruction</td><td>148</td><td>+0.50 (+0.08)</td><td class="good">+0.17</td><td>11%</td><td>detects #1, partly re-fires — only task that does</td></tr>
+<tr><td>instant_event_alert</td><td>38</td><td>+0.50 (+0.09)</td><td>−0.01</td><td>18%</td><td>clean one-shot detector (earlier failure was audio)</td></tr>
+<tr><td>cumulative_counting</td><td>102</td><td>+0.45 (+0.12)</td><td>+0.05</td><td>30%</td><td>detects #1, then latched</td></tr>
+<tr><td>snapshot_counting</td><td>73</td><td>+0.42 (+0.15)</td><td>—</td><td>36%</td><td class="good">works (one event per video)</td></tr>
+<tr><td>explicit_target_grounding</td><td>12</td><td>+0.31 (+0.06)</td><td>—</td><td>25%</td><td>works (one event)</td></tr>
+<tr><td>dedup_counting</td><td>283</td><td>+0.27 (−0.00)</td><td>+0.04</td><td>27%</td><td>spike then slow decay</td></tr>
+<tr><td>semantic_condition_alert</td><td>38</td><td>+0.23 (+0.12)</td><td>−0.00</td><td>18%</td><td>mostly drift</td></tr>
+<tr><td>realtime_state_monitor</td><td>142</td><td>+0.08 (+0.01)</td><td>−0.01</td><td>11%</td><td class="bad">no response, flat ~0.6</td></tr>
+<tr><td>event_narration</td><td>96</td><td>−0.03 (−0.01)</td><td>−0.03</td><td>1%</td><td class="bad">no response, flat ~0.65</td></tr>
+</table>
+<img class="fig" src="img/B_event_locked_by_task.png"><div class="how"><b>How to read this:</b> One panel per task: red = first event, blue = second, green = third, grey dashed = random times. A sharp red step at 0 with flat blue/green means "detects the first event, then latched". Flat lines everywhere (narration, state monitor) mean the model does not react to events at all.</div>
+<div class="row"><img class="fig" style="max-width:48%" src="img/A_per_video_auc.png"><img class="fig" style="max-width:40%" src="img/C_pre_vs_post_first_event.png"></div><div class="how"><b>How to read this:</b> <b>Left image:</b> blue = how well p_hit tracks events in each video (AUC), orange = what random would give; blue mass right of 0.7 = videos where it really works; boxes = the same per task. <b>Right image:</b> each dot is a video: x = average p_hit before the first event, y = after. Dots above the diagonal got stuck higher after the first event &mdash; most of them.</div>
+<p><b>What drives p_hit?</b> Regressing p_hit on frame features within each task, the strongest predictor is <b>"is this after the first event?"</b> (standardised weight 0.11–0.23 in counting, steps, alerts) — larger than "is an event happening now?" (0.02–0.08). Query–frame similarity and visual change add almost nothing.</p>
+
+<h2 id="tsne">5. Frame embeddings (SigLIP2) — t-SNE</h2>
+<p class="note">6,300 frames (≤900 per outcome role). Click a point to see the frame, the question, what the model wrote, and the GT event. Roles:
+<b>hit</b> fire within ±3 s of an event · <b>event_caught</b>/<b>event_missed</b> event frame with/without a fire · <b>overfire_early</b> fire before event #1 · <b>overfire_late</b> fire after event #1, far from any event (the flood) · <b>high_nofire</b> p ≥ 0.8 far from events · <b>quiet</b> p &lt; 0.2 far from events.</p>
+<div><label>colour by <select id="tColor"><option value="role">outcome role</option><option value="err">p_hit − GT</option><option value="task">task</option></select></label><label>task <select id="tTask"></select></label></div>
+<div class="how"><b>How to read this:</b> each dot is one video frame, placed so frames that <i>look</i> alike sit close together. Colour = what happened at that frame. If over-fires were caused by particular images (faces, text, ...), the pink dots would form their own clusters. They do not &mdash; colours are mixed everywhere. Switch "colour by" to <i>task</i>: the clusters are just video topics. Click any dot to see the frame.</div><div class="row"><div id="tsnePlot" style="height:720px;flex:1;min-width:700px"></div>
+<div id="pane"><i class="note">click a point</i></div></div>
+<p><b>Result:</b> outcomes do <i>not</i> separate by image content. A classifier on the frame embedding (held-out videos) predicts over-fire vs hit at AUC <b>0.50</b> and missed vs caught at <b>0.50</b>; only hit vs quiet separates a little (0.60). <b>Over-fires are not caused by the picture — they are caused by the latch state.</b> Over-fire frames are visually <i>more static</i> (frame change 0.076 vs 0.109 for hits).</p>
+<details><summary class="note">static t-SNE figures</summary><img class="fig" src="img/tsne_overall.png"><img class="fig" src="img/tsne_by_task.png"></details>
+
+<h2 id="frames">6. What is in the frame</h2>
+<ul>
+<li><b>Quiet</b> (p low) frames are dominated by logos, intro/title cards, animated text, black screens — the model correctly stays silent on non-content.</li>
+<li><b>Hits</b> have people performing / being interviewed, podiums, scores, hands, trays — real task content.</li>
+<li><b>Over-fires after the latch</b> look like ordinary task content (same scene, nothing new) — not a distinct visual category.</li>
+<li><b>Missed events by modality:</b> visual 25%, visual+speech 27%, <span class="bad">visual+sound 47%</span>, visual+sound+speech 70% — events cued by sound are missed about twice as often even in the none/helpful set.</li>
+</ul>
+<p class="note">Full tables: <code>phit_analysis/step4/summary.md</code> (zero-shot tags and the model's own <code>seen</code> words, within-task log-odds).</p>
+
+<h2 id="sheets">7. Real examples (contact sheets)</h2>
+<div><label>task <select id="sTask"></select></label><label>type <select id="sRole"><option>overfire_late</option><option>overfire_early</option><option>event_missed</option><option>hit</option><option>high_nofire</option><option>traces_best_worst</option></select></label></div>
+<div class="how"><b>How to read this:</b> each tile is a real frame: the title gives video, time, p_hit and distance to the nearest real event; below are the question, what the model said it saw, the real event description and automatic tags. "traces_best_worst" shows full p_hit timelines for the 3 best and 3 worst videos of the task.</div><img id="sheet" class="fig">
+
+<h2 id="hyp">9. More hypotheses &mdash; tested</h2>
+<p class="note">Beyond the latch we tested ten further explanations. Verdict first, details below.</p>
+<table>
+<tr><th>#</th><th>hypothesis</th><th>verdict</th><th>evidence</th></tr>
+<tr><td>H1</td><td>p_hit drifts up with time even with no event</td><td>partly</td><td>median slope before any event +0.03/min; 65% of videos drift up; 77% cross 0.5 at least once before the first event</td></tr>
+<tr><td>H2</td><td>the latch never releases</td><td>mostly true</td><td>after event #1 only 39% of videos ever stay below 0.5 for &ge;10 s; snapshot counting 9%, condition alerts 74%</td></tr>
+<tr><td>H3</td><td class="good"><b>event #2 is visible when p_hit has room to rise</b></td><td class="good"><b>TRUE &mdash; key finding</b></td><td>p_hit before event #2 &lt;0.3 &rarr; jump <b>+0.17</b> (random +0.05); 0.3&ndash;0.5 &rarr; <b>+0.16</b> (+0.03); 0.5&ndash;0.7 &rarr; +0.06; &gt;0.7 &rarr; none. Events #1 and #2 &lt;10 s apart: +0.11, otherwise &asymp;0</td></tr>
+<tr><td>H4</td><td>early latch because the target is already on screen</td><td>weakly</td><td>54% of videos latch &gt;3 s before event #1 (median 27 s early, often at t&asymp;4 s on intros/title cards); question words in the model&#39;s description at the crossing 11% vs 6% on quiet frames</td></tr>
+<tr><td>H5</td><td>the model&#39;s own description notices later events</td><td>no</td><td>novelty of the description: AUC 0.555 vs random 0.536</td></tr>
+<tr><td>H6</td><td>latch is a quirk of one System 3 config</td><td>no</td><td>present in every config (jump at event #1: full8 +0.20, full9 +0.30, iea +0.62)</td></tr>
+<tr><td>H7</td><td>sees <b>objects/appearances</b> better than <b>actions</b></td><td class="good">TRUE (first events)</td><td>first event caught: appearance 87%, speech-cued 87% vs action 66%, count 58%; jump +0.32 vs +0.24</td></tr>
+<tr><td>H8</td><td>brief events missed, long-lasting caught</td><td>no</td><td>first events whose scene changes within 2 s: caught 77%; scenes stable &gt;10 s: 67%. Brief is not worse.</td></tr>
+<tr><td>H9</td><td>events with little visual change are missed</td><td class="good">TRUE</td><td>visual change &lt;0.05 &rarr; jump +0.13, caught 63%; change &gt;0.3 &rarr; jump <b>+0.33</b>, caught 78%</td></tr>
+<tr><td>H10</td><td>missed when the described thing was already visible before</td><td class="good">TRUE</td><td>least visible before &rarr; jump +0.31, caught 79%; most visible before &rarr; +0.18, 65%. When the described thing newly appears &rarr; +0.32</td></tr>
+</table>
+<p class="note">"caught" for later events is inflated by over-firing (the system fires constantly after the latch), so use the <b>jump</b> as the honest measure.</p>
+<img class="fig" src="img/H123.png"><div class="how"><b>How to read this:</b> <b>Left (H3):</b> bars = rise of p_hit at event #2, grouped by how high p_hit already was just before it; grey = random moments. When p_hit is low (left bars) event #2 produces a big rise &mdash; the model <i>can</i> see the second event, it just has no room to show it once saturated. <b>Middle (H2):</b> fraction of videos per task where the latch ever lets go. <b>Right (H1):</b> creep of p_hit per minute before any event; mass right of 0 = slow upward drift.</div>
+<img class="fig" src="img/H7_H10.png"><div class="how"><b>How to read this:</b> Each panel splits GT events by one property and shows the average p_hit jump at the event (blue = first event of the video, orange = later events; n = number of events). <b>Event kind</b>: appearances and spoken cues give the biggest first-event jumps; actions and counts smaller. <b>Scene persistence</b>: no clear trend. <b>Visual change</b>: the more the image changes at the event, the bigger the jump. <b>Already visible</b>: if what the event describes was on screen before, the jump is smaller. Later events (orange) are &asymp;0 everywhere &mdash; the latch dominates.</div>
+<img class="fig" src="img/tsne_text_events.png"><div class="how"><b>How to read this:</b> <b>Left:</b> every GT event placed by the meaning of its text description (text embedding); colour = p_hit jump (blue = noticed, red = not). <b>Middle:</b> the actual video frame at each event, placed by appearance. <b>Right:</b> every question placed by meaning; colour = how well p_hit worked for that video (yellow = good). Patches of one colour would mean "this kind of event/question works". Colours are mostly mixed: success depends less on <i>what</i> is asked than on the latch state and visual change.</div>
+<img class="fig" src="img/H5_seen_text.png"><div class="how"><b>How to read this:</b> Can later events be found from the model&#39;s own words? Bars are AUCs after the latch for p_hit, novelty of the description, and overlap of the description with the question. All &asymp;0.5: no.</div>
+<p><b>Take-away:</b> perception is not the main bottleneck for later events &mdash; when p_hit starts low, event #2 is detected almost as well as event #1. The bottleneck is that <b>p_hit saturates and stays saturated</b>. Among first events it is best at <b>visually salient appearances</b> and weaker on actions, counts and changes that barely alter the picture.</p>
+<h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
+<ol>
+<li><b>Restore headroom.</b> H3: event #2 is detected when p_hit starts low. Anything that pushes p_hit back down after a fire (re-asking relative to the last report, short-window probe, context reset) should make later events visible.</li>
+<li><b>Change the question, not the gate.</b> Ask "is there a <i>new</i> X since t_last?" (insert the last report time) or "is X happening <i>right now</i>?". The current question measures "has X ever happened", which saturates.</li>
+<li><b>Short-window probe.</b> Probe over the last N seconds instead of the full cache — tests whether the latch is memory of event #1.</li>
+<li><b>Per-event reset.</b> After a fire, require p to fall and re-rise, or reset the probe context.</li>
+<li><b>Training data to collect:</b> (a) multi-event clips with per-event "new occurrence" labels; (b) hard negatives: target visible / already happened, nothing new; (c) state-change clips for state-monitor and narration (no response today); (d) sound-cued visual events.</li>
+<li><b>Keep what works:</b> one-shot tasks (snapshot, grounding, instant alert) already behave well — use them as positive examples.</li>
+<li><b>Scope:</b> report vision-only claims on none + helpful; audio-required events are essentially undetectable by the VL arm.</li>
+</ol>
+<p class="note">Code: <code>phit_analysis/*.py</code>. Data: Clariden <code>$SCRATCH/phit_analysis/</code>. Ticks rebuilt from <code>~/backups/system_3_submission.zip</code> + <code>system3_bench_eval_20260925.zip</code>; runs mix several System 3 configs (full8, full9, iea_*).</p>
+</main>
+
+<script>
+const ROLECOL={hit:"#1a9850",event_caught:"#91cf60",event_missed:"#d73027",overfire_early:"#fc8d59",overfire_late:"#e7298a",high_nofire:"#7570b3",quiet:"#9e9e9e"};
+const DARK={paper_bgcolor:"#0f1115",plot_bgcolor:"#0f1115",font:{color:"#e6e6e6"},margin:{t:30,l:60,r:20,b:50}};
+let V=[],P=[];
+const uniq=a=>[...new Set(a)].sort();
+function fill(sel,opts,all){sel.innerHTML=(all?'<option value="">all</option>':'')+opts.map(o=>`<option>${o}</option>`).join("")}
+
+Promise.all([fetch("site_data/traces.json").then(r=>r.json()),fetch("site_data/tsne.json").then(r=>r.json())]).then(([v,p])=>{
+ V=v;P=p;const tasks=uniq(V.map(x=>x.task));
+ fill(rTask,tasks,true);fill(eTask,tasks,false);fill(tTask,tasks,true);fill(sTask,tasks,false);
+ rTask.onchange=rSort.onchange=drawRaster;drawRaster();
+ eTask.onchange=fillVids;eVid.onchange=drawTrace;ePrev.onclick=()=>step(-1);eNext.onclick=()=>step(1);fillVids();
+ tColor.onchange=tTask.onchange=drawTsne;drawTsne();
+ sTask.onchange=sRole.onchange=drawSheet;drawSheet();
+});
+
+function drawRaster(){
+ const task=rTask.value,LAG=[];for(let l=-40;l<=120;l++)LAG.push(l);
+ let rows=[];
+ for(const v of V){ if(task&&v.task!==task)continue; if(!v.gt.length)continue;
+  const g=[...v.gt].sort((a,b)=>a-b),e1=Math.round(g[0]),m=new Map();
+  v.t.forEach((t,i)=>m.set(Math.round(t),v.p[i]));
+  const z=LAG.map(l=>m.has(e1+l)?m.get(e1+l):null);
+  if(z.slice(0,40).every(x=>x===null))continue;
+  let on=z.findIndex(x=>x!==null&&x>=.5);if(on<0)on=999;
+  rows.push({v,z,on,later:g.slice(1).map(x=>x-g[0])});
+ }
+ rows.sort((a,b)=>rSort.value==="auc"?((b.v.auc??0)-(a.v.auc??0)):(a.v.task<b.v.task?-1:a.v.task>b.v.task?1:a.on-b.on));
+ const ys=rows.map((r,i)=>i);
+ const mx=[],my=[];rows.forEach((r,i)=>r.later.forEach(d=>{if(d<=120){mx.push(d);my.push(i)}}));
+ Plotly.newPlot("rasterPlot",[
+  {type:"heatmap",z:rows.map(r=>r.z),x:LAG,y:ys,colorscale:"Magma",zmin:0,zmax:1,colorbar:{title:"p_hit"},
+   text:rows.map(r=>LAG.map(()=>r.v.id)),hovertemplate:"%{text}<br>t−event1=%{x}s<br>p=%{z}<extra></extra>"},
+  {type:"scatter",mode:"markers",x:mx,y:my,marker:{symbol:"line-ns-open",color:"cyan",size:6},name:"later events",hoverinfo:"skip"}],
+  {...DARK,yaxis:{autorange:"reversed",title:`videos (n=${rows.length})`},xaxis:{title:"seconds from FIRST ground-truth event"},
+   shapes:[{type:"line",x0:0,x1:0,y0:0,y1:1,yref:"paper",line:{color:"cyan",width:2}}],showlegend:false});
+}
+
+function fillVids(){const vs=V.filter(v=>v.task===eTask.value).sort((a,b)=>(b.auc??-1)-(a.auc??-1));
+ eVid.innerHTML=vs.map(v=>`<option value="${v.id}">AUC ${v.auc??"–"} · ${v.audio} · ${v.id}</option>`).join("");drawTrace();}
+function step(d){const i=eVid.selectedIndex+d;if(i>=0&&i<eVid.options.length){eVid.selectedIndex=i;drawTrace();}}
+function drawTrace(){const v=V.find(x=>x.id===eVid.value);if(!v)return;
+ eQ.innerHTML=`<b>Q:</b> ${v.q} &nbsp; <span class="note">(${v.audio}, per-video AUC ${v.auc??"–"})</span>`;
+ const shapes=v.gt.map(g=>({type:"rect",x0:g-3,x1:g+3,y0:0,y1:1,yref:"paper",fillcolor:"rgba(6,214,160,.25)",line:{width:0}}));
+ const fx=v.fire,fy=fx.map(t=>{let i=v.t.findIndex(x=>x>=t);return v.p[Math.max(0,i)]});
+ Plotly.newPlot("tracePlot",[
+  {x:v.t,y:v.p,mode:"lines",line:{color:"#e6e6e6",width:1.5},name:"p_hit",text:v.seen,hovertemplate:"t=%{x}s p=%{y}<br>seen: %{text}<extra></extra>"},
+  {x:fx,y:fy,mode:"markers",marker:{color:v.fire_hit.map(h=>h?"#06d6a0":"#ef476f"),size:8},name:"fires",hoverinfo:"x"},
+  {x:v.gt,y:v.gt.map(()=>1.03),mode:"markers",marker:{symbol:"triangle-down",color:"#06d6a0",size:10},name:"GT",text:v.gt_desc.map((d,i)=>`[${v.gt_type[i]}] ${d}`),hovertemplate:"GT %{x}s<br>%{text}<extra></extra>"}],
+  {...DARK,shapes,yaxis:{range:[-.05,1.08],title:"p_hit"},xaxis:{title:"video time (s)"},legend:{orientation:"h"}});
+ eGT.innerHTML=v.gt.map((g,i)=>`<b>${g}s</b> [${v.gt_type[i]}] ${v.gt_desc[i]}`).join("<br>");
+}
+
+function drawTsne(){const task=tTask.value,pts=P.filter(p=>!task||p.task===task),by=tColor.value;let tr=[];
+ if(by==="err"){tr=[{x:pts.map(p=>p.x),y:pts.map(p=>p.y),mode:"markers",type:"scattergl",customdata:pts.map((p,i)=>i),
+   marker:{size:5,color:pts.map(p=>p.err),colorscale:"RdBu",reversescale:true,cmin:-1,cmax:1,colorbar:{title:"p−GT"}},text:pts.map(p=>p.role),hovertemplate:"%{text}<extra></extra>"}];}
+ else{const key=by==="role"?"role":"task";for(const k of uniq(pts.map(p=>p[key]))){const s=pts.filter(p=>p[key]===k);
+   tr.push({x:s.map(p=>p.x),y:s.map(p=>p.y),mode:"markers",type:"scattergl",name:`${k} (${s.length})`,customdata:s.map(p=>pts.indexOf(p)),
+   marker:{size:5,color:key==="role"?ROLECOL[k]:undefined},hovertemplate:`${k}<br>p=%{text}<extra></extra>`,text:s.map(p=>p.p)});}}
+ Plotly.newPlot("tsnePlot",tr,{...DARK,xaxis:{visible:false},yaxis:{visible:false},legend:{itemsizing:"constant"}});
+ tsnePlot.on("plotly_click",e=>{const p=pts[e.points[0].customdata];
+  pane.innerHTML=`<img src="site_data/${p.img}"><p><b>${p.role}</b> · ${p.task}<br>t=${p.t}s · p_hit=${p.p} · dGT=${p.d??"–"}s</p>
+  <p><b>Q:</b> ${p.q}</p><p><b>model saw:</b> ${p.seen}</p>${p.ev?`<p><b>GT:</b> ${p.ev}</p>`:""}<p class="note">${p.vid}</p>`;});
+}
+function drawSheet(){sheet.src=`site_data/sheets/${sTask.value}__${sRole.value}.png`;sheet.onerror=()=>{sheet.alt="(no examples for this task/type)"}}
+</script>
+</body>
+</html>
