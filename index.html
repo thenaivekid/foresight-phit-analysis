@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -106,6 +106,26 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <p><b>Result:</b> outcomes do <i>not</i> separate by image content. A classifier on the frame embedding (held-out videos) predicts over-fire vs hit at AUC <b>0.50</b> and missed vs caught at <b>0.50</b>; only hit vs quiet separates a little (0.60). <b>Over-fires are not caused by the picture — they are caused by the latch state.</b> Over-fire frames are visually <i>more static</i> (frame change 0.076 vs 0.109 for hits).</p>
 <details><summary class="note">static t-SNE figures</summary><img class="fig" src="img/tsne_overall.png"><img class="fig" src="img/tsne_by_task.png"></details>
 
+<h2 id="qtsne">Query &amp; GT-event embeddings (interactive t-SNE)</h2>
+<p>Every <b>question</b> (932) and every <b>ground-truth event description</b> (3,713) embedded with the SigLIP2 text encoder, projected with t-SNE. Hover a dot to read the text.</p>
+<div><label>map <select id="xMap"><option value="q">questions</option><option value="e">GT event descriptions</option></select></label>
+<label>colour by <select id="xCol"><option value="score">how well p_hit worked</option><option value="task">task</option><option value="kind">event kind (events only)</option></select></label>
+<label>events <select id="xFirst"><option value="">all</option><option value="1">first event only</option><option value="0">later events only</option></select></label></div>
+<div id="textPlot" style="height:720px"></div>
+<div class="how"><b>How to read this:</b> Each dot is one question (or one GT event). Dots close together mean similar meaning. <b>Questions map:</b> colour = per-video AUC (yellow = p_hit tracked events well in that video, purple = not). <b>Events map:</b> colour = p_hit jump at that event (blue = the model reacted, red = it did not). If a region were uniformly yellow/blue, that kind of question/event would reliably work. Switch "colour by" to <i>task</i>: the maps cluster by task, and within each task cluster the score colours are mixed &mdash; meaning <b>what is asked/described matters less than whether the model was already latched</b>. Use "first event only": first events are mostly blue (noticed), later ones mostly red &mdash; the latch again, visible in meaning space.</div>
+<script>
+fetch("site_data/text_tsne.json").then(r=>r.json()).then(D=>{
+ const draw=()=>{const m=xMap.value,c=xCol.value,f=xFirst.value;let P=D[m];
+  if(m==="e"&&f!=="")P=P.filter(p=>p.first===(f==="1"));
+  const txt=P.map(p=>m==="q"?`[${p.task}] AUC ${p.auc}<br>${p.q}`:`[${p.task}] ${p.first?"FIRST":"later"} event, ${p.kind}, jump ${p.jump}<br>GT: ${p.d}<br>Q: ${p.q}`);
+  let tr;
+  if(c==="score"){tr=[{x:P.map(p=>p.x),y:P.map(p=>p.y),mode:"markers",type:"scattergl",text:txt,hovertemplate:"%{text}<extra></extra>",
+     marker:{size:5,color:P.map(p=>m==="q"?p.auc:p.jump),colorscale:m==="q"?"Viridis":"RdBu",cmin:m==="q"?.3:-.5,cmax:m==="q"?.9:.5,colorbar:{title:m==="q"?"AUC":"jump"}}}];}
+  else{const key=(c==="kind"&&m==="e")?"kind":"task";tr=[...new Set(P.map(p=>p[key]))].sort().map(k=>{const S=P.filter(p=>p[key]===k);
+     return{x:S.map(p=>p.x),y:S.map(p=>p.y),mode:"markers",type:"scattergl",name:`${k} (${S.length})`,text:S.map(p=>txt[P.indexOf(p)]),hovertemplate:"%{text}<extra></extra>",marker:{size:5}}});}
+  Plotly.newPlot("textPlot",tr,{paper_bgcolor:"#0f1115",plot_bgcolor:"#0f1115",font:{color:"#e6e6e6"},xaxis:{visible:false},yaxis:{visible:false},margin:{t:20,l:10,r:10,b:10},legend:{itemsizing:"constant"}});};
+ xMap.onchange=xCol.onchange=xFirst.onchange=draw;draw();});
+</script>
 <h2 id="frames">6. What is in the frame</h2>
 <ul>
 <li><b>Quiet</b> (p low) frames are dominated by logos, intro/title cards, animated text, black screens — the model correctly stays silent on non-content.</li>
