@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -41,6 +41,7 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <b>Data.</b> 932 OmniPro samples where audio is not required (none + helpful), 699 videos, ~180k seconds of model output, vision-only System 3 (frozen Qwen3-VL-8B).</div>
 
 <h2 id="headline">Headline</h2>
+<p><b>Bottom line:</b> re-asking the same frozen model "did a <i>new</i> instance just start?" over the last 8 frames raises end-to-end time-F1 from 0.23&ndash;0.26 (System 3) to <b>0.41</b> on 105 videos (+0.17, CI +0.11&ndash;0.23), no training. See sections 12&ndash;14.</p>
 <p><b>p_hit latches.</b> It detects the <i>first</i> occurrence of the target sharply and on time, then stays high for the rest of the video, so later occurrences are invisible. It behaves like a <i>"has it happened yet?"</i> detector, not a <i>"is a new one happening now?"</i> detector.</p>
 <div class="cards">
  <div class="card"><b>+0.28</b>jump in p_hit at event #1<br><span class="note">(random time: +0.05)</span></div>
@@ -221,6 +222,30 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <li><b>Trade-off:</b> new_W8 brings false starts back to 50% (the start of the video looks "new"). Pair it with a short warm-up or the hard negatives from H21.</li>
 <li>Narration, state monitoring and step instructions remain near chance under every framing &mdash; these need better definitions of "event" and/or training data, not prompt changes.</li>
 </ol>
+<h2 id="e2e">14. End-to-end: does the better probe give a better benchmark score?</h2>
+<p>Each signal goes through the same simple gate (fire when it rises past a threshold, optional silence period and warm-up). The gate settings are chosen <b>per task by 5-fold cross-fitting over videos</b>, so no signal is tuned on the videos it is scored on. Score = OmniPro-style time-F1 (fires matched one-to-one to GT within &plusmn;3 s). Same 105 videos.</p>
+<table>
+<tr><th>signal</th><th>time-F1</th><th>precision</th><th>recall</th><th>fires (GT = 456)</th></tr>
+<tr><td>System 3 &mdash; its actual logged fires</td><td>0.261</td><td>0.16</td><td>0.63</td><td>1,740</td></tr>
+<tr><td>System 3 p_hit, same fitted gate</td><td>0.232</td><td>0.20</td><td>0.28</td><td>640</td></tr>
+<tr><td>"happening now?" last 8 frames</td><td>0.296</td><td>0.34</td><td>0.26</td><td>347</td></tr>
+<tr><td>"happening now?" last 2 frames</td><td>0.351</td><td>0.38</td><td>0.32</td><td>388</td></tr>
+<tr><td>"new AND now" (product)</td><td>0.359</td><td>0.43</td><td>0.31</td><td>325</td></tr>
+<tr><td class="good"><b>"did a NEW instance just start?" last 8 frames</b></td><td class="good"><b>0.406</b></td><td>0.36</td><td>0.47</td><td>604</td></tr>
+</table>
+<p>Paired bootstrap over videos: <b>new_W8 &minus; System 3 p_hit = +0.17 time-F1 (95% CI +0.11 to +0.23)</b>; new&times;now +0.14 [+0.07, +0.20]; now_W8 +0.09 [+0.03, +0.15].</p>
+<table><tr><th>time-F1 by task</th><th>System 3 actual</th><th>new_W8</th></tr>
+<tr><td>cumulative_counting</td><td>0.27</td><td class="good">0.62</td></tr>
+<tr><td>instant_event_alert</td><td>0.25</td><td class="good">0.58</td></tr>
+<tr><td>sequential_step_instruction</td><td>0.39</td><td>0.45</td></tr>
+<tr><td>dedup_counting</td><td>0.20</td><td>0.41</td></tr>
+<tr><td>semantic_condition_alert</td><td>0.15</td><td>0.37</td></tr>
+<tr><td>realtime_state_monitor</td><td>0.26</td><td>0.32</td></tr>
+<tr><td>explicit_target_grounding (n=3)</td><td>0.18</td><td>0.30</td></tr>
+<tr><td>event_narration</td><td>0.25</td><td>0.29</td></tr></table>
+<div class="how"><b>How to read this:</b> time-F1 is the benchmark&#39;s timing score: it rewards firing close to each real event and penalises extra fires. System 3 fires constantly (1,740 fires for 456 events) so its precision is low. The re-asked probe fires a third as often and catches more events. <b>Caveats:</b> 105 videos, timing only (content of the answer is not scored here because the re-probe only outputs yes/no). A 932-video confirmation is running.</div>
+<h3>First event only</h3>
+<p>If each video had only its first event (one fire, one GT): System 3 0.33, "new" probe 0.36, "has it happened?" probe <b>0.43</b> (thresholds picked in-sample for all). For a single event the latching wording is actually best; the "new" wording wins when events repeat. The common failure remains switching on too early (System 3 in 45% of videos).</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Best tested probe (section 13):</b> "did a <i>new</i> instance just start?" over the last 8 frames: +0.10 AUC over System 3 (CI +0.06&ndash;+0.14) and later events become visible. Cheap, no training.</li>
