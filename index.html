@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -154,6 +154,18 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <img class="fig" src="img/H15_H16_H18.png"><div class="how"><b>How to read this:</b> <b>Left (H15) &mdash; the most important plot of this round.</b> x = the value of p_hit, y = how often that moment is really near an event. Blue = before the first event: high p_hit means a much higher chance of a real event (the signal works). Red = after the latch: the line is flat &mdash; whatever p_hit says, the chance is the same ~12%. <b>Middle (H16):</b> how p_hit changes in the next 5 s while latched, after a scene change (blue) vs not (orange); slightly more big drops after a scene change. <b>Right (H18):</b> event-detection score (time-F1, higher = better) of three gates on the same p_hit; all about equal, so the fix must change the model&#39;s signal, not the threshold rule.</div>
 <img class="fig" src="img/H11_H12.png"><div class="how"><b>How to read this:</b> Bars = how much p_hit jumps at the first event, split by <b>left:</b> when the first event happens; <b>middle:</b> how long the video is; <b>right:</b> how many events per minute. n = videos, AUC = median per-video AUC. Early events and short videos get the clearest reaction; long videos drift toward chance.</div>
 <p><b>Take-away round 2:</b> the signal is informative <i>until</i> the first latch and uninformative after it (H15); half of the videos latch before any event at all (H13); and the reaction weakens the longer the model has been watching (H11). All three point to the same lever: <b>keep the probe&#39;s context fresh</b> (short window or reset), rather than tuning gates (H18).</p>
+<h2 id="hyp3">11. Round 3: the first event, false starts, triage (H19&ndash;H21)</h2>
+<table>
+<tr><th>#</th><th>question</th><th>answer</th></tr>
+<tr><td>H19</td><td>If the system only had to catch the <b>first</b> event, how often would p_hit cross 0.5 at the right moment?</td>
+<td><b>34%</b> on time (&plusmn;3 s), vs <b>4%</b> for a random crossing &mdash; 8.6&times; better than chance. But <b>51% false-start</b> (cross before any event), 10% late, 5% never. Best: dedup counting 54% on time, sequential steps 40%, cumulative 38%, instant alert 37%. Worst: narration 0% (97% false start), condition alert 13% (42% never).</td></tr>
+<tr><td>H20</td><td>Can the first 20 s tell us whether a video will "work"?</td>
+<td>Somewhat: AUC 0.61. Videos that end up working start <b>quiet</b> (mean p 0.17 in the first 20 s) vs 0.36 for the rest. A model that starts excited stays excited.</td></tr>
+<tr><td>H21</td><td>What is on screen at a false start?</td>
+<td>The model's own description at false starts is enriched for <b>intro, logo, title card, text, screen, background, close-up view, parked vehicles</b> &mdash; non-content and static scenery. At on-time crossings it describes <b>people and actions</b>: man, person, girl, hands, speaking, walking, sitting, shirt, bowl.</td></tr>
+</table>
+<img class="fig" src="img/H19_first_crossing.png"><div class="how"><b>How to read this:</b> One bar per task. Each bar splits the videos by when p_hit <b>first</b> crosses 0.5: green = on time with the first real event, red = too early (false start), yellow = late, grey = never. The dashed line is how often a randomly timed crossing would be "on time" (~4%). Green far beyond the dashed line = the model genuinely detects the first event; big red = it switches on before anything happens (narration, state monitor, snapshot counting).</div>
+<p><b>Take-away round 3:</b> as a <i>first-event detector</i> the model is 8&ndash;9&times; better than chance, which is the strongest positive result here. Its two failure modes are <b>false starts on intros/logos/static scenery</b> (fixable with hard negatives: "title card visible, nothing happened") and <b>the latch afterwards</b>.</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Restore headroom.</b> H3: event #2 is detected when p_hit starts low. Anything that pushes p_hit back down after a fire (re-asking relative to the last report, short-window probe, context reset) should make later events visible.</li>
@@ -161,6 +173,7 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <li><b>Short-window probe.</b> Probe over the last N seconds instead of the full cache — tests whether the latch is memory of event #1.</li>
 <li><b>Per-event reset.</b> After a fire, require p to fall and re-rise, or reset the probe context.</li>
 <li><b>Training data to collect:</b> (a) multi-event clips with per-event "new occurrence" labels; (b) hard negatives: target visible / already happened, nothing new; (c) state-change clips for state-monitor and narration (no response today); (d) sound-cued visual events.</li>
+<li><b>Hard negatives for false starts:</b> intros, logos, title cards, static establishing shots, labelled "nothing yet" (H21).</li>
 <li><b>Keep what works:</b> one-shot tasks (snapshot, grounding, instant alert) already behave well — use them as positive examples.</li>
 <li><b>Scope:</b> report vision-only claims on none + helpful; audio-required events are essentially undetectable by the VL arm.</li>
 </ol>
