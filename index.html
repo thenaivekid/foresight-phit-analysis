@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -166,8 +166,36 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 </table>
 <img class="fig" src="img/H19_first_crossing.png"><div class="how"><b>How to read this:</b> One bar per task. Each bar splits the videos by when p_hit <b>first</b> crosses 0.5: green = on time with the first real event, red = too early (false start), yellow = late, grey = never. The dashed line is how often a randomly timed crossing would be "on time" (~4%). Green far beyond the dashed line = the model genuinely detects the first event; big red = it switches on before anything happens (narration, state monitor, snapshot counting).</div>
 <p><b>Take-away round 3:</b> as a <i>first-event detector</i> the model is 8&ndash;9&times; better than chance, which is the strongest positive result here. Its two failure modes are <b>false starts on intros/logos/static scenery</b> (fixable with hard negatives: "title card visible, nothing happened") and <b>the latch afterwards</b>.</p>
+<h2 id="exp">12. Experiment: re-asking the question differently (GPU, 105 videos)</h2>
+<p>To test the explanations above directly, we re-ran the same frozen Qwen3-VL-8B ourselves on 105 none/helpful videos (every task, &ge;2 events, &le;5 min), every 2 s, with different <b>context windows</b> and <b>question framings</b>, and compared with System 3's own p_hit on the <i>same</i> videos.</p>
+<table>
+<tr><th>condition</th><th>what the model sees</th><th>question</th></tr>
+<tr><td>system3</td><td>whole history in a KV cache</td><td>System 3's own controller/probe</td></tr>
+<tr><td>now_W2 / now_W8 / now_W32</td><td>last 2 / 8 / 32 frames</td><td>"Is it happening <b>right now</b>, in the latest frames?"</td></tr>
+<tr><td>ever_W32</td><td>last 32 frames</td><td>"Has it happened <b>at any point</b> in these frames?"</td></tr>
+</table>
+<table>
+<tr><th></th><th>system3</th><th>now_W2</th><th>now_W8</th><th>now_W32</th><th>ever_W32</th></tr>
+<tr><td>mean P(yes) after event #1 (latch level)</td><td class="bad">0.59</td><td class="good">0.21</td><td class="good">0.27</td><td class="good">0.34</td><td class="bad">0.67</td></tr>
+<tr><td>false start (switches on before event #1)</td><td class="bad">50%</td><td class="good">27%</td><td class="good">25%</td><td class="good">23%</td><td>27%</td></tr>
+<tr><td>jump at event #1 / #2 / #3</td><td>+0.19 / 0.00 / &minus;0.01</td><td>+0.15 / +0.05 / 0.00</td><td>+0.21 / +0.05 / +0.07</td><td>+0.21 / +0.08 / +0.04</td><td>+0.39 / +0.13 / +0.06</td></tr>
+<tr><td>median per-video AUC (whole / after event #1)</td><td>0.56 / 0.53</td><td>0.61 / 0.59</td><td>0.61 / 0.60</td><td>0.58 / 0.57</td><td>0.56 / 0.53</td></tr>
+</table>
+<p class="note">Paired differences vs system3 on the same 105 videos (bootstrap 95% CI): latch level now_W8 <b>&minus;0.32 [&minus;0.39, &minus;0.24]</b>, ever_W32 +0.08 [&minus;0.00, +0.16]; false starts now_W8 <b>&minus;26 points [&minus;37, &minus;14]</b>; mean AUC now_W8 +0.02 [&minus;0.02, +0.06] (not significant), now_W2 &minus;0.05 [&minus;0.09, &minus;0.01].</p>
+<img class="fig" src="img/W1_event_locked.png"><div class="how"><b>How to read this:</b> One panel per condition: average P(yes) around the first (red), second (blue) and third (green) events, all videos lined up at 0 = event. In <b>system3</b> and <b>ever_W32</b> the curves sit high after the first event (latched). In the <b>"now"</b> panels the curves come back down between events and are much lower overall &mdash; no latch.</div>
+<img class="fig" src="img/W2_summary.png"><div class="how"><b>How to read this:</b> <b>Left:</b> jump at events #1/#2/#3 per condition. <b>Middle:</b> how often the first crossing of 0.5 is a false start (red) vs on time (green). <b>Right:</b> median AUC per video, over the whole video and after the first event; 0.5 = chance.</div>
+<img class="fig" src="img/W3_examples.png"><div class="how"><b>How to read this:</b> Six example videos. Black = System 3, coloured = our re-probes; green bands = real events. Compare how the black line stays up while the "now" lines drop back between events.</div>
+<h3>What the experiment proves</h3>
+<ol>
+<li><b>The latch is caused by the question&#39;s meaning, not by long memory.</b> With the <i>same</i> 32-frame window, asking "has it happened?" latches (0.67) while asking "is it happening now?" does not (0.34). Shorter windows lower it further.</li>
+<li><b>Half of the false starts are a System 3 artefact.</b> Every fresh probe, even the latch-prone one, halves false starts (50% &rarr; ~25%) &mdash; so System 3&#39;s prompt / in-context examples / long cache push it to switch on early.</li>
+<li><b>Removing the latch does not by itself make the model a much better event detector.</b> AUC improves only slightly (+0.02, not significant) and later-event jumps stay small (+0.05 &ndash; +0.08). Once the saturation is gone, the remaining limit is <b>perception/timing of the event itself</b> &mdash; consistent with H7/H9/H10 (actions and subtle changes are hard).</li>
+<li>2 frames is too little context (AUC drops); 8 frames is the sweet spot here.</li>
+</ol>
+<p><b>Implication:</b> fix the question framing ("happening now" / "new since last report") to remove the latch and halve false starts &mdash; cheap, no training. Then the real gains must come from better perception of actions and subtle changes: that is where training data should go.</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
+<li><b>Tested (section 12):</b> asking "is it happening right now?" over the last 8 frames removes the latch (post-event level 0.59 &rarr; 0.27) and halves false starts (50% &rarr; 25%), but only slightly improves event ranking (AUC +0.02). Framing fixes the latch; perception is the next bottleneck.</li>
 <li><b>Restore headroom.</b> H3: event #2 is detected when p_hit starts low. Anything that pushes p_hit back down after a fire (re-asking relative to the last report, short-window probe, context reset) should make later events visible.</li>
 <li><b>Change the question, not the gate.</b> Ask "is there a <i>new</i> X since t_last?" (insert the last report time) or "is X happening <i>right now</i>?". The current question measures "has X ever happened", which saturates.</li>
 <li><b>Short-window probe.</b> Probe over the last N seconds instead of the full cache — tests whether the latch is memory of event #1.</li>
