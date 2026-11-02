@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -41,7 +41,7 @@ The benchmark has <b>ground-truth (GT) events</b>: the exact seconds a human sai
 <b>Data.</b> 932 OmniPro samples where audio is not required (none + helpful), 699 videos, ~180k seconds of model output, vision-only System 3 (frozen Qwen3-VL-8B).</div>
 
 <h2 id="headline">Headline</h2>
-<p><b>Bottom line:</b> re-asking the same frozen model "did a <i>new</i> instance just start?" over the last 8 frames raises end-to-end time-F1 from 0.23&ndash;0.26 (System 3) to <b>0.41</b> on 105 videos (+0.17, CI +0.11&ndash;0.23), no training. See sections 12&ndash;14.</p>
+<p><b>Bottom line:</b> re-asking the same frozen model "did a <i>new</i> instance just start?" over the last 8 frames raises end-to-end time-F1 from 0.21 (System 3 actual) / 0.26 (System 3 p_hit, fitted) to <b>0.43</b> on all 932 videos (+0.18, CI +0.16&ndash;0.19), no training. See sections 12&ndash;14.</p>
 <p><b>p_hit latches.</b> It detects the <i>first</i> occurrence of the target sharply and on time, then stays high for the rest of the video, so later occurrences are invisible. It behaves like a <i>"has it happened yet?"</i> detector, not a <i>"is a new one happening now?"</i> detector.</p>
 <div class="cards">
  <div class="card"><b>+0.28</b>jump in p_hit at event #1<br><span class="note">(random time: +0.05)</span></div>
@@ -266,6 +266,20 @@ fetch("site_data/text_tsne.json").then(r=>r.json()).then(D=>{
 <div class="how"><b>How to read this:</b> time-F1 is the benchmark&#39;s timing score: it rewards firing close to each real event and penalises extra fires. System 3 fires constantly (1,740 fires for 456 events) so its precision is low. The re-asked probe fires a third as often and catches more events. <b>Caveats:</b> 105 videos, timing only (content of the answer is not scored here because the re-probe only outputs yes/no). A 932-video confirmation is running.</div>
 <h3>First event only</h3>
 <p>If each video had only its first event (one fire, one GT): System 3 0.33, "new" probe 0.36, "has it happened?" probe <b>0.43</b> (thresholds picked in-sample for all). For a single event the latching wording is actually best; the "new" wording wins when events repeat. The common failure remains switching on too early (System 3 in 45% of videos).</p>
+<h2 id="newprobe">15. The "new instance" probe, analysed like System 3 (932 videos)</h2>
+<table><tr><th></th><th>System 3</th><th>new probe</th></tr>
+<tr><td>jump at event #1 / #2 / #3</td><td>+0.24 / +0.05 / 0.00</td><td class="good">+0.34 / +0.25 / +0.20</td></tr>
+<tr><td>mean P(yes) after event #1</td><td class="bad">0.66 (latched)</td><td class="good">0.29</td></tr>
+<tr><td>after event #1: near an event when P(yes)&gt;0.9 vs &lt;0.1</td><td>13% vs 14% (no information)</td><td class="good">32% vs 5%</td></tr>
+<tr><td>later events with a jump &gt; 0.1</td><td>21%</td><td class="good">54%</td></tr>
+<tr><td>first crossing of 0.8: on time / false start / late</td><td>35% / 46% / 12%</td><td>36% / 32% / 23%</td></tr></table>
+<img class="fig" src="img/N1_event_locked.png"><div class="how"><b>How to read this:</b> Left = System 3, right = new probe. Each line is the average P(yes) around event #1 (red), #2 (blue), #3 (green). On the left, after event #1 everything stays high: the latch. On the right, every event gets its own bump and the line comes back down between events.</div>
+<img class="fig" src="img/N2_calibration.png"><div class="how"><b>How to read this:</b> Red lines only (moments after the first event; the blue line is 0 by construction). x = P(yes), y = how often that moment is really near an event. Flat red (System 3) = the number means nothing. Rising red (new probe) = a confident yes really signals an event.</div>
+<img class="fig" src="img/N3_headroom.png"><div class="how"><b>How to read this:</b> Jump at event #2, grouped by P(yes) just before it. Both signals react when they have room (left bars). The new probe usually HAS room (363 of its event #2s start below 0.3, vs 139 for System 3), so most later events get noticed.</div>
+<img class="fig" src="img/N4_first_crossing.png"><div class="how"><b>How to read this:</b> Per task: when does the signal first cross 0.8, relative to the first real event? Green = on time, red = too early, yellow = late, grey = never. The new probe has fewer false starts overall (46% &rarr; 32%) and is much better on grounding, counting and instant alerts, but false starts move to condition alerts and step instructions, and dedup counting gets later.</div>
+<img class="fig" src="img/N5_event_kinds.png"><div class="how"><b>How to read this:</b> Jump at the event, split by event kind, visual change, and whether the described thing was already visible. Light = System 3, dark = new probe; blue = first events, orange = later events. With the new probe, later events react too (dark orange bars). Actions and subtle changes still react least; counting is no longer weak.</div>
+<img class="fig" src="img/N6_tsne.png"><div class="how"><b>How to read this:</b> Four maps. Top: every GT event placed by the meaning of its description; bottom: by the look of the frame at the event. Left: coloured by System 3&#39;s jump; right: by the new probe&#39;s jump (blue = reacted). The right column is bluer everywhere, not in one corner: the fix is general across kinds of events and scenes.</div>
+<p><b>Take-away:</b> the new question removes the latch at full scale; later events become visible and P(yes) is informative after the first event. Remaining gaps: actions, subtle changes, sequential steps and narration; false starts shift tasks rather than disappear (experiment A2 running).</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Best tested probe (section 13):</b> "did a <i>new</i> instance just start?" over the last 8 frames: +0.10 AUC over System 3 (CI +0.06&ndash;+0.14) and later events become visible. Cheap, no training.</li>
