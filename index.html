@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#a1">Cause of false starts</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -280,6 +280,18 @@ fetch("site_data/text_tsne.json").then(r=>r.json()).then(D=>{
 <img class="fig" src="img/N5_event_kinds.png"><div class="how"><b>How to read this:</b> Jump at the event, split by event kind, visual change, and whether the described thing was already visible. Light = System 3, dark = new probe; blue = first events, orange = later events. With the new probe, later events react too (dark orange bars). Actions and subtle changes still react least; counting is no longer weak.</div>
 <img class="fig" src="img/N6_tsne.png"><div class="how"><b>How to read this:</b> Four maps. Top: every GT event placed by the meaning of its description; bottom: by the look of the frame at the event. Left: coloured by System 3&#39;s jump; right: by the new probe&#39;s jump (blue = reacted). The right column is bluer everywhere, not in one corner: the fix is general across kinds of events and scenes.</div>
 <p><b>Take-away:</b> the new question removes the latch at full scale; later events become visible and P(yes) is informative after the first event. Remaining gaps: actions, subtle changes, sequential steps and narration; false starts shift tasks rather than disappear (experiment A2 running).</p>
+<h2 id="a1">16. What causes System 3&#39;s false starts? Its instruction prompt (experiment, 105 videos)</h2>
+<p>Starting from a plain probe, we added <b>one</b> System 3 component at a time (same videos, frames, model).</p>
+<table><tr><th>what was added</th><th>false starts</th><th>mean P(yes) before event #1</th><th>paired change (95% CI)</th></tr>
+<tr><td>plain "has it happened?", 32 frames</td><td>27%</td><td>0.13</td><td>&mdash;</td></tr>
+<tr><td><b>+ System 3 instruction prompt</b></td><td class="bad"><b>48%</b></td><td>0.35</td><td>+21 pts [+11, +31]</td></tr>
+<tr><td>plain "happening now?", 8 frames</td><td>25%</td><td>0.10</td><td>&mdash;</td></tr>
+<tr><td><b>+ System 3 instruction prompt</b></td><td class="bad"><b>55%</b></td><td>0.39</td><td>+31 pts [+21, +41]</td></tr>
+<tr><td>plain "happening now?", 32 frames</td><td>23%</td><td>0.10</td><td>&mdash;</td></tr>
+<tr><td>+ longer memory (64 frames)</td><td>23%</td><td>0.10</td><td>0 [0, 0]</td></tr>
+<tr><td>System 3 (reference)</td><td>51%</td><td>0.33</td><td></td></tr></table>
+<div class="how"><b>How to read this:</b> each pair of rows adds one ingredient of System 3 to an otherwise plain probe. Adding the instruction prompt alone brings false starts back up to System 3&#39;s level and raises the "yes" level before anything happens from ~0.1 to ~0.35. Adding more memory changes nothing. So System 3&#39;s extra false starts come from its prompt (likely its worked "yes" examples), not from its memory. The prompt also strengthens the latch (P(yes) after event #1: 0.27 &rarr; 0.67).</div>
+<p><b>Hard negatives in the question</b> (telling the "new" probe that intros, logos, title cards are not new): false starts 49% &rarr; 51%, time-F1 0.406 &rarr; 0.404 &mdash; no effect. Listing negatives in words does not work; a warm-up or training is needed.</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Best tested probe (section 13):</b> "did a <i>new</i> instance just start?" over the last 8 frames: +0.10 AUC over System 3 (CI +0.06&ndash;+0.14) and later events become visible. Cheap, no training.</li>
