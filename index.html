@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#a1">Cause of false starts</a><a href="#rigor">Rigor</a><a href="#quad">Quadrants</a><a href="#content">Content F1</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#a1">Cause of false starts</a><a href="#rigor">Rigor</a><a href="#quad">Quadrants</a><a href="#content">Content F1</a><a href="#fixes">Fixes tested</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -317,6 +317,15 @@ fetch("site_data/text_tsne.json").then(r=>r.json()).then(D=>{
 <tr><td><b>joint F1</b> (right time AND content)</td><td class="bad">0.06</td><td class="good"><b>0.22</b></td></tr></table>
 <h2 id="cgate">20. Change gate</h2>
 <p>Multiplying P(yes) by visual change: <b>System 3 +0.046 time-F1 [+0.032, +0.061]</b> (it ignores change by itself); new probe +0.009 (n.s.; it already follows change). Per task it helps grounding (0.53&rarr;0.71) and narration (0.17&rarr;0.28) for the new probe but hurts condition alerts.</p>
+<h2 id="fixes">21. What fixes work beyond the new question? (932 videos unless noted)</h2>
+<table><tr><th>attempt</th><th>&Delta; time-F1 (95% CI)</th><th>verdict</th></tr>
+<tr><td>gate tricks on the new probe: wider refractory, fire at peak, lag shift, all combined</td><td>&minus;0.004 to 0.000 (n.s.)</td><td class="bad">no</td></tr>
+<tr><td>gate tricks on System 3</td><td>+0.016 [+0.006, +0.025]</td><td>tiny</td></tr>
+<tr><td>change gate on System 3</td><td>+0.046 [+0.032, +0.061]</td><td class="good">yes (System 3 only)</td></tr>
+<tr><td><b>learned combination</b> (new + now + change + System 3 + time, per task, cross-fitted)</td><td class="good"><b>+0.042 [+0.027, +0.058]</b> &rarr; 0.469; precision 0.36&rarr;0.48</td><td class="good">yes</td></tr>
+<tr><td>"new since your last report at t=X" probe (105 videos)</td><td>&minus;0.041 [&minus;0.080, &minus;0.006]</td><td class="bad">worse: more conservative, loses recall</td></tr>
+<tr><td>System 3 length effect after removing drift</td><td>slope &minus;0.048 &rarr; &minus;0.024</td><td>drift explains half; the rest is lost discrimination in long context</td></tr></table>
+<p><b>Lesson:</b> one prompt change (has-happened &rarr; new instance) gives +0.18; further prompt and gate tricks do not help; combining complementary signals helps (+0.04); the remaining errors (missed later events, wrong content) need training.</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Best tested probe (section 13):</b> "did a <i>new</i> instance just start?" over the last 8 frames: +0.10 AUC over System 3 (CI +0.06&ndash;+0.14) and later events become visible. Cheap, no training.</li>
