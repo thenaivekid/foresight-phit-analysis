@@ -30,7 +30,7 @@
 <header>
  <h1>System 3 (Foresight) — does p_hit know <i>when</i> events happen?</h1>
  <div class="note">OmniPro, frozen Qwen3-VL-8B, vision-only arm. <b>none + helpful audio samples only (932 samples, 699 videos)</b>. Analysis 2026-10-31.</div>
- <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#a1">Cause of false starts</a><a href="#fix">Suggested improvements</a></nav>
+ <nav><a href="#glossary">Primer</a><a href="#headline">Headline</a><a href="#raster">Latch heatmap</a><a href="#later">Events #2/#3</a><a href="#explorer">Video explorer</a><a href="#tasks">Per task</a><a href="#tsne">Frame t-SNE</a><a href="#qtsne">Query t-SNE</a><a href="#frames">What's in the frame</a><a href="#sheets">Examples</a><a href="#hyp">More hypotheses</a><a href="#hyp2">Round 2</a><a href="#hyp3">Round 3</a><a href="#exp">Experiment</a><a href="#exp2">Experiment 2</a><a href="#e2e">End-to-end</a><a href="#newprobe">New probe</a><a href="#a1">Cause of false starts</a><a href="#rigor">Rigor</a><a href="#quad">Quadrants</a><a href="#content">Content F1</a><a href="#fix">Suggested improvements</a></nav>
 </header>
 <main>
 <h2 id="glossary">Start here: the 60-second primer</h2>
@@ -292,6 +292,31 @@ fetch("site_data/text_tsne.json").then(r=>r.json()).then(D=>{
 <tr><td>System 3 (reference)</td><td>51%</td><td>0.33</td><td></td></tr></table>
 <div class="how"><b>How to read this:</b> each pair of rows adds one ingredient of System 3 to an otherwise plain probe. Adding the instruction prompt alone brings false starts back up to System 3&#39;s level and raises the "yes" level before anything happens from ~0.1 to ~0.35. Adding more memory changes nothing. So System 3&#39;s extra false starts come from its prompt (likely its worked "yes" examples), not from its memory. The prompt also strengthens the latch (P(yes) after event #1: 0.27 &rarr; 0.67).</div>
 <p><b>Hard negatives in the question</b> (telling the "new" probe that intros, logos, title cards are not new): false starts 49% &rarr; 51%, time-F1 0.406 &rarr; 0.404 &mdash; no effect. Listing negatives in words does not work; a warm-up or training is needed.</p>
+<h2 id="rigor">17. Rigor round: three findings re-tested on both models (932 videos)</h2>
+<p class="note">Task fixed effects, within-task / within-video comparisons, cluster-robust regressions, bootstrap CIs, permutation tests.</p>
+<table><tr><th>finding</th><th>System 3</th><th>new probe</th><th>verdict</th></tr>
+<tr><td>sound-cued events caught less (odds ratio, controlled)</td><td>0.88 [0.63, 1.24], p=0.48</td><td class="good">0.59 [0.41, 0.85], p=0.004</td><td>real for the new probe (&minus;15 pts); hidden by the latch in System 3</td></tr>
+<tr><td>calm first 20 s &rarr; video works (Spearman, within task)</td><td>&minus;0.01, p=0.82</td><td class="good">&minus;0.14, p=0.006 (overall &minus;0.37)</td><td>real for the new probe (calmest quarter works 77% vs 31%); not real for System 3</td></tr>
+<tr><td>AUC falls with video length (per log-length, controlled)</td><td class="bad">&minus;0.057, p=8e&minus;9</td><td>+0.011, n.s.</td><td>System 3 only: AUC 0.61 (&lt;1 min) &rarr; 0.50 (&gt;8 min); new probe 0.65 &rarr; 0.79</td></tr>
+<tr><td>drift of P(yes) before the first event</td><td>+0.047/min</td><td>+0.004/min</td><td>System 3 drifts up</td></tr></table>
+<p><b>Cause of the length effect:</b> it remains in System 3 videos <i>without</i> a false start (&minus;0.109, p=1e&minus;11), so it is not early latching; the memory-free new probe shows no decline. &rArr; System 3&#39;s long accumulated context + drift causes it.</p>
+<h2 id="quad">18. Error quadrants: which failure to fix first</h2>
+<img class="fig" src="img/Q1_quadrant.png"><div class="how"><b>How to read this:</b> Each bubble is one error type. Height = how much time-F1 would rise if that error were fixed perfectly (oracle). Left = cheap to fix (prompt, question, gating); right = needs perception / training. Top-left bubbles are the best value: <b>floods</b> (extra fires after the first event) and <b>mistiming</b> (fires 3&ndash;10 s off).</div>
+<table><tr><th></th><th>System 3</th><th>new probe</th></tr>
+<tr><td>base time-F1</td><td>0.263</td><td>0.434</td></tr>
+<tr><td>fires: hit / false start / mistimed / flood</td><td>21% / 10% / 24% / 46%</td><td>37% / 6% / 18% / 39%</td></tr>
+<tr><td>gain if fixed: flood (cheap)</td><td>+0.11</td><td>+0.13</td></tr>
+<tr><td>gain if fixed: mistimed (cheap-medium)</td><td>+0.15</td><td>+0.10</td></tr>
+<tr><td>gain if fixed: false start (cheap)</td><td>+0.02</td><td>+0.02</td></tr>
+<tr><td>gain if fixed: missed first event (training)</td><td>+0.07</td><td>+0.07</td></tr>
+<tr><td>gain if fixed: missed later events (training)</td><td>+0.27</td><td>+0.20</td></tr>
+<tr><td>gain if content were perfect (105-video judge)</td><td>+0.20</td><td>+0.19</td></tr></table>
+<h2 id="content">19. Content and joint F1 (105 videos, judged by an opencode session)</h2>
+<table><tr><th></th><th>System 3</th><th>new probe</th></tr>
+<tr><td>time-F1</td><td>0.26</td><td>0.41</td></tr><tr><td>content accuracy of matched fires</td><td>23%</td><td class="good">54%</td></tr>
+<tr><td><b>joint F1</b> (right time AND content)</td><td class="bad">0.06</td><td class="good"><b>0.22</b></td></tr></table>
+<h2 id="cgate">20. Change gate</h2>
+<p>Multiplying P(yes) by visual change: <b>System 3 +0.046 time-F1 [+0.032, +0.061]</b> (it ignores change by itself); new probe +0.009 (n.s.; it already follows change). Per task it helps grounding (0.53&rarr;0.71) and narration (0.17&rarr;0.28) for the new probe but hurts condition alerts.</p>
 <h2 id="fix">8. Suggested improvements (not implemented — analysis only)</h2>
 <ol>
 <li><b>Best tested probe (section 13):</b> "did a <i>new</i> instance just start?" over the last 8 frames: +0.10 AUC over System 3 (CI +0.06&ndash;+0.14) and later events become visible. Cheap, no training.</li>
